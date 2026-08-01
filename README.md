@@ -38,8 +38,7 @@ To optimize FPGA hardware resources, the module employs a **Finite State Machine
            |  (Apply Saturation / Overflow)   |
            +----------------------------------+
 
-
-           ### Key Components
+### Key Components
 
 1. **Shared MAC Core:** 
    Computes the IIR difference equation using combinational logic:
@@ -70,4 +69,3 @@ module Digital_equalizer(
     input         clk,
     output reg [15:0] audio_out
 );
-
