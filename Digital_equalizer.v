@@ -12,8 +12,12 @@ output reg [15:0]audio_out
     
    reg [31:0]audio;
    wire [31:0]mac_out;
+   wire [39:0] raw_mac;
    reg[31:0]mac_out1,mac_out2,audio1,bassh,midsh,trebleh;
    reg[11:0]b1,b2,a1,a2;
+   reg signed [11:0] k_coefficient; 
+   reg [2:0] gain_input;
+
    
    parameter bassb1 = 12'd0;
    parameter bassb2 = 12'd0;
@@ -30,7 +34,8 @@ output reg [15:0]audio_out
    parameter treblea1 = 12'd0;
    parameter treblea2 = 12'd0;
 
-   assign mac_out = b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2;
+   assign raw_mac = (((12'h400 + k_coeffcient)/2)*audio) + ((12'h400 -k_coefficient)/2)*(b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2);
+   assign mac_out = raw_mac >>> 10;
    
    reg[31:0]filter_out;
    
@@ -50,6 +55,7 @@ output reg [15:0]audio_out
              mac_out1 = bass1;
              mac_out2 = mac_out1; 
              audio1 = bassh;
+             gain_input = BassLevel;
             end      
             
    ST_mids: begin
@@ -58,26 +64,41 @@ output reg [15:0]audio_out
              mac_out1 = mids1;
              mac_out2 = mac_out1;
              audio1 = midsh;
+             gain_input = MidsLevel;
             end
             
     ST_treble: begin
              b1 = trebleb1; b2 = trebleb2; a1 = treblea1; a2 = treblea2;
              next_state = ST_output;
-             audio <= mac_out;
+             audio = mac_out;
              treble1 = mac_out;
              treble2 = treble1;
              mac_out1 = treble1;
              mac_out2 = mac_out1;
              audio1 = midsh;
+             gain_input=TrebleLevel;
             end    
             
     ST_output: begin
-               next_state <= ST_input;
+               next_state = ST_input;
                end
-     default: next_state<=ST_input;                           
+     default: next_state = ST_input;                           
    endcase
-   end 
    
+   case (gain_input)
+              3'sd-2: k_coefficient = 12'h200; // 0.5
+              3'sd-1: k_coefficient = 12'h300; // 0.75
+              3'sd0:  k_coefficient = 12'h400; // 1.0
+              3'sd1:  k_coefficient = 12'h500; // 1.25
+              3'sd2:  k_coefficient = 12'h600; // 1.5
+              3'sd-4: k_coefficient = 12'h200; 
+              3'sd-3: k_coefficient = 12'h200;
+              3'sd3:  k_coefficient = 12'h600;
+              default: k_coefficient = 12'h400;
+          endcase
+          
+   end 
+      
    always@(posedge clk) begin
    if(reset)begin
    state <= ST_input;
@@ -121,16 +142,16 @@ output reg [15:0]audio_out
              mac_out1 <= treble1;
              mac_out2 <= mac_out1;
              audio1 <= midsh;
-             midsh<= audio;
+             trebleh<= audio;
             end    
             
     ST_output: begin;
-               if(mac_out[31:16] >= 16'd32767)
+               if(mac_out[25:10] >= 16'd32767)
                    filter_out <=  16'd32767;
-                   else if(mac_out[31:16] <= -16'sd32768)
+                   else if(mac_out[25:10] <= -16'sd32768)
                    filter_out <= -16'd32678;
                    else
-                    filter_out <= mac_out;
+                    filter_out <= mac_out[25:10];
                end
      default: next_state<=ST_input;                           
    endcase
