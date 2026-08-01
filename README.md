@@ -1,3 +1,4 @@
+# 🚧 WORK IN PROGRESS: This project is currently under active development. 🚧
 # 3-Band Digital Audio Equalizer (Verilog HDL)
 
 ## 📌 Project Overview
