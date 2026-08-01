@@ -42,7 +42,8 @@ To optimize FPGA hardware resources, the module employs a **Finite State Machine
 
 1. **Shared MAC Core:** 
    Computes the IIR difference equation using combinational logic:
-   $$\text{mac\_out} = (b_1 \cdot \text{audio}) + (b_2 \cdot \text{audio1}) - (a_1 \cdot \text{mac\_out1}) - (a_2 \cdot \text{mac\_out2})$$
+   ```text
+   mac_out = (b1 * audio) + (b2 * audio1) - (a1 * mac_out1) - (a2 * mac_out2)
 
 2. **State Machine (`state`):**
    * **`ST_input` (0):** Samples 16-bit `audio_in` and performs sign-extension to 32 bits.
