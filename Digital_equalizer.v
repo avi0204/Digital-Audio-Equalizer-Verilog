@@ -19,20 +19,20 @@ output reg [15:0]audio_out
    reg [2:0] gain_input;
 
    
-   parameter bassb1 = 12'd0;
-   parameter bassb2 = 12'd0;
-   parameter bassa1 = 12'd0;
-   parameter bassa2 = 12'd0;
+   parameter bassb1 = -12'sd2031;
+   parameter bassb2 =  12'sd1007;
+   parameter bassa1 = -12'sd2031;
+   parameter bassa2 =  12'sd1007;
    
-   parameter midsb1 = 12'd0;
-   parameter midsb2 = 12'd0;
-   parameter midsa1 = 12'd0;
-   parameter midsa2 = 12'd0;
+   parameter midsb1 = -12'sd1877;
+   parameter midsb2 =  12'sd870;
+   parameter midsa1 = -12'sd1877;
+   parameter midsa2 =  12'sd870;
    
-   parameter trebleb1 = 12'd0;
-   parameter trebleb2 = 12'd0;
-   parameter treblea1 = 12'd0;
-   parameter treblea2 = 12'd0;
+   parameter trebleb1 = -12'sd664;
+   parameter trebleb2 =  12'sd305;
+   parameter treblea1 = -12'sd664;
+   parameter treblea2 =  12'sd305;
 
    assign raw_mac = (((12'h400 + k_coeffcient)/2)*audio) + ((12'h400 -k_coefficient)/2)*(b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2);
    assign mac_out = raw_mac >>> 10;
