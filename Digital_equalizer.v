@@ -34,7 +34,7 @@ output reg [15:0]audio_out
    parameter treblea1 = -12'sd664;
    parameter treblea2 =  12'sd305;
 
-   assign raw_mac = (((12'h400 + k_coeffcient)/2)*audio) + ((12'h400 -k_coefficient)/2)*(b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2);
+   assign raw_mac = (((12'h400 + k_coefficient)/2)*audio) + ((12'h400 -k_coefficient)/2)*(b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2);
    assign mac_out = raw_mac >>> 10;
    
    reg[31:0]filter_out;
@@ -86,13 +86,13 @@ output reg [15:0]audio_out
    endcase
    
    case (gain_input)
-              3'sd-2: k_coefficient = 12'h200; // 0.5
-              3'sd-1: k_coefficient = 12'h300; // 0.75
+              -3'sd2: k_coefficient = 12'h200; // 0.5
+              -3'sd1: k_coefficient = 12'h300; // 0.75
               3'sd0:  k_coefficient = 12'h400; // 1.0
               3'sd1:  k_coefficient = 12'h500; // 1.25
               3'sd2:  k_coefficient = 12'h600; // 1.5
-              3'sd-4: k_coefficient = 12'h200; 
-              3'sd-3: k_coefficient = 12'h200;
+              -3'sd4: k_coefficient = 12'h200;
+              -3'sd3: k_coefficient = 12'h200;
               3'sd3:  k_coefficient = 12'h600;
               default: k_coefficient = 12'h400;
           endcase
