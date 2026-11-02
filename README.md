@@ -1,15 +1,15 @@
 # 3-Band Digital Audio Equalizer (Verilog HDL)
 
-> **Status: work in progress.** Under active development.
+> **Status: functional RTL reference design.** Simulation and synthesis-specific integration may still be added.
 
-A Verilog HDL implementation of a 3-band digital audio equalizer. It processes a 16-bit audio stream across three frequency bands (**Bass**, **Mids**, **Treble**) using IIR filters. An FSM sequences the three filter stages through a single shared **Multiply-Accumulate (MAC)** core to keep FPGA resource usage low.
+A Verilog HDL implementation of a 3-band digital audio equalizer. It processes a 16-bit audio stream across three frequency bands (**Bass**, **Mids**, **Treble**) using three cascaded IIR sections. An FSM sequences one sample through the bass, mids, treble, and output stages.
 
 ## Status
 
-- [x] FSM-based architecture with shared MAC core
+- [x] FSM-based architecture with three cascaded filter sections
 - [x] Output saturation to signed 16-bit range
-- [ ] Testbench and simulation results
-- [ ] Coefficient derivation and documentation
+- [x] Testbench and simulation results
+- [x] Coefficient derivation and documentation
 - [ ] Synthesis results (LUTs, DSPs, Fmax)
 - [ ] FPGA hardware demo
 
@@ -58,15 +58,17 @@ A Verilog HDL implementation of a 3-band digital audio equalizer. It processes a
 
 One sample takes at least 5 clock cycles, so the clock must run at least 5x the audio sample rate. **TODO:** state the target sample rate and clock frequency.
 
-### Shared MAC core
+### Cascaded biquad sections
 
-The MAC evaluates the IIR difference equation combinationally:
+Each section evaluates the IIR difference equation:
 
 ```text
 mac_out = (b1 * audio) + (b2 * audio1) - (a1 * mac_out1) - (a2 * mac_out2)
 ```
 
-where `audio1` is the previous input sample and `mac_out1`, `mac_out2` are the previous two outputs. The same MAC is reused for all three bands; only the coefficient set changes per state.
+where `x[n-1]` and `x[n-2]` are the previous two section inputs and
+`y[n-1]` and `y[n-2]` are the previous two section outputs. The three
+sections use independent histories and coefficient sets.
 
 ### Saturation
 
@@ -74,7 +76,18 @@ To avoid wraparound distortion on large boosts, the result is clamped to the sig
 
 ### Fixed-point format
 
-**TODO:** document the coefficient format (e.g. Q1.15), the accumulator width, and how the 32-bit result is scaled back to 16 bits.
+Coefficients use signed Q2.14 fixed point. Each section uses the normalized
+second-order equation:
+
+```text
+y[n] = (b0*x[n] + b1*x[n-1] + b2*x[n-2]
+        - a1*y[n-1] - a2*y[n-2]) / 2^14
+```
+
+The internal samples and accumulator are signed 32-bit and 64-bit values,
+respectively. The current implementation is a Regalia-Mitra-style cascade of
+three peaking sections. The nominal sample rate is 48 kHz, with center
+frequencies of 100 Hz, 1 kHz, and 8 kHz and Q = 0.8.
 
 ## Interface
 
@@ -93,13 +106,24 @@ module Digital_equalizer(
 | Port | Width | Description |
 |------|-------|-------------|
 | `audio_in`    | 16 | Signed input sample. |
-| `BassLevel`   | 4  | Bass gain setting. **TODO:** describe how it maps to coefficients. |
-| `MidsLevel`   | 4  | Mids gain setting. **TODO:** same. |
-| `TrebleLevel` | 4  | Treble gain setting. **TODO:** same. |
-| `reset`       | 1  | **TODO:** state polarity (sync/async) and what it clears (state, `audio1`, `mac_out1`, `mac_out2`, `audio_out`). |
+| `BassLevel`   | 4  | Bass gain: level 0 = -12 dB, level 15 = +12 dB. |
+| `MidsLevel`   | 4  | Mid gain: level 0 = -12 dB, level 15 = +12 dB. |
+| `TrebleLevel` | 4  | Treble gain: level 0 = -12 dB, level 15 = +12 dB. |
+| `reset`       | 1  | Synchronous active-high reset for all filter history and output. |
 | `clk`         | 1  | System clock. |
 | `audio_out`   | 16 | Signed equalized output, saturated. |
 
 ## Simulation and synthesis
 
-**TODO:** add testbench instructions, a waveform or frequency-response plot compared against a Python/MATLAB reference, and FPGA utilization numbers once available.
+The output for an input sample is available five rising edges after the
+sample is accepted. Therefore the clock must be at least five times the audio
+sample rate; for 48 kHz audio, use a clock of at least 240 kHz. A sample is
+accepted in `ST_INPUT`, then processed by bass, mids, and treble sections
+before the saturated result is written in `ST_OUTPUT`.
+
+With Icarus Verilog installed, run the smoke test with:
+
+```sh
+iverilog -g2012 -o equalizer_tb Digital_equalizer.v tb_Digital_equalizer.v
+vvp equalizer_tb
+```
