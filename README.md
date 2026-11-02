@@ -1,73 +1,105 @@
-# 🚧 WORK IN PROGRESS: This project is currently under active development. 🚧
 # 3-Band Digital Audio Equalizer (Verilog HDL)
 
-## 📌 Project Overview
-This repository contains a Verilog HDL implementation of a **3-Band Digital Audio Equalizer**. The design dynamically processes a 16-bit audio stream across three distinct frequency bands: **Bass**, **Mids**, and **Treble**. 
+> **Status: work in progress.** Under active development.
 
-To optimize FPGA hardware resources, the module employs a **Finite State Machine (FSM)** driven architecture that reuses a single shared **Multiply-Accumulate (MAC)** computation core sequentially across all three filter stages.
+A Verilog HDL implementation of a 3-band digital audio equalizer. It processes a 16-bit audio stream across three frequency bands (**Bass**, **Mids**, **Treble**) using IIR filters. An FSM sequences the three filter stages through a single shared **Multiply-Accumulate (MAC)** core to keep FPGA resource usage low.
 
----
+## Status
 
-## 🏗 System Architecture & FSM Workflow
+- [x] FSM-based architecture with shared MAC core
+- [x] Output saturation to signed 16-bit range
+- [ ] Testbench and simulation results
+- [ ] Coefficient derivation and documentation
+- [ ] Synthesis results (LUTs, DSPs, Fmax)
+- [ ] FPGA hardware demo
 
-           +----------------------------------+
-           |             ST_INPUT             |
-           | (Sign-extend 16-bit to 32-bit)   |
-           +----------------+-----------------+
-                            |
-                            v
-           +----------------------------------+
-           |             ST_BASS              |
-           | (Process IIR Bass Filter Coeffs) |
-           +----------------+-----------------+
-                            |
-                            v
-           +----------------------------------+
-           |             ST_MIDS              |
-           | (Process IIR Mids Filter Coeffs) |
-           +----------------+-----------------+
-                            |
-                            v
-           +----------------------------------+
-           |            ST_TREBLE             |
-           | (Process IIR Treble Filter Coeffs|
-           +----------------+-----------------+
-                            |
-                            v
-           +----------------------------------+
-           |            ST_OUTPUT             |
-           |  (Apply Saturation / Overflow)   |
-           +----------------------------------+
+## Architecture
 
-### Key Components
+### FSM workflow
 
-1. **Shared MAC Core:** 
-   Computes the IIR difference equation using combinational logic:
-   ```text
-   mac_out = (b1 * audio) + (b2 * audio1) - (a1 * mac_out1) - (a2 * mac_out2)
+```text
+        +--------------------------------------+
+        |              ST_INPUT                |
+        |  Sample audio_in, sign-extend to 32b |
+        +------------------+-------------------+
+                           |
+                           v
+        +--------------------------------------+
+        |              ST_BASS                 |
+        |  Load bass coefficients, run MAC     |
+        +------------------+-------------------+
+                           |
+                           v
+        +--------------------------------------+
+        |              ST_MIDS                 |
+        |  Load mids coefficients, run MAC     |
+        +------------------+-------------------+
+                           |
+                           v
+        +--------------------------------------+
+        |              ST_TREBLE               |
+        |  Load treble coefficients, run MAC   |
+        +------------------+-------------------+
+                           |
+                           v
+        +--------------------------------------+
+        |              ST_OUTPUT               |
+        |  Saturate and update audio_out       |
+        +--------------------------------------+
+```
 
-2. **State Machine (`state`):**
-   * **`ST_input` (0):** Samples 16-bit `audio_in` and performs sign-extension to 32 bits.
-   * **`ST_bass` (1):** Loads Bass filter coefficients ($b_1, b_2, a_1, a_2$) and applies feedback registers.
-   * **`ST_mids` (2):** Loads Mids filter coefficients and computes intermediate output.
-   * **`ST_treble` (3):** Loads Treble filter coefficients and completes cascaded processing.
-   * **`ST_output` (4):** Checks upper and lower bounds for clipping and updates `filter_out`.
+| State | Value | Description |
+|-------|-------|-------------|
+| `ST_INPUT`  | 0 | Samples 16-bit `audio_in` and sign-extends it to 32 bits. |
+| `ST_BASS`   | 1 | Loads bass coefficients (b1, b2, a1, a2) and updates feedback registers. |
+| `ST_MIDS`   | 2 | Loads mids coefficients and computes the intermediate output. |
+| `ST_TREBLE` | 3 | Loads treble coefficients and completes the cascaded processing. |
+| `ST_OUTPUT` | 4 | Checks upper and lower bounds, clips if needed, and updates the output. |
 
-3. **Saturation Logic:**
-   Prevents binary wraparound distortion during extreme amplitude boosts by clamping signed 16-bit boundaries between `+32767` and `-32768`.
+One sample takes at least 5 clock cycles, so the clock must run at least 5x the audio sample rate. **TODO:** state the target sample rate and clock frequency.
 
----
+### Shared MAC core
 
-## 🔌 Pinout & Interface
+The MAC evaluates the IIR difference equation combinationally:
 
-### Module Signature
+```text
+mac_out = (b1 * audio) + (b2 * audio1) - (a1 * mac_out1) - (a2 * mac_out2)
+```
+
+where `audio1` is the previous input sample and `mac_out1`, `mac_out2` are the previous two outputs. The same MAC is reused for all three bands; only the coefficient set changes per state.
+
+### Saturation
+
+To avoid wraparound distortion on large boosts, the result is clamped to the signed 16-bit range, `-32768` to `+32767`, before being written to `audio_out`.
+
+### Fixed-point format
+
+**TODO:** document the coefficient format (e.g. Q1.15), the accumulator width, and how the 32-bit result is scaled back to 16 bits.
+
+## Interface
+
 ```verilog
 module Digital_equalizer(
-    input  [15:0] audio_in,
-    input  [3:0]  BassLevel,
-    input  [3:0]  MidsLevel,
-    input  [3:0]  TrebleLevel,
+    input  [15:0] audio_in,     // signed 16-bit audio sample
+    input  [3:0]  BassLevel,    // 4-bit bass gain control
+    input  [3:0]  MidsLevel,    // 4-bit mids gain control
+    input  [3:0]  TrebleLevel,  // 4-bit treble gain control
     input         reset,
     input         clk,
-    output reg [15:0] audio_out
+    output reg [15:0] audio_out // signed 16-bit equalized output
 );
+```
+
+| Port | Width | Description |
+|------|-------|-------------|
+| `audio_in`    | 16 | Signed input sample. |
+| `BassLevel`   | 4  | Bass gain setting. **TODO:** describe how it maps to coefficients. |
+| `MidsLevel`   | 4  | Mids gain setting. **TODO:** same. |
+| `TrebleLevel` | 4  | Treble gain setting. **TODO:** same. |
+| `reset`       | 1  | **TODO:** state polarity (sync/async) and what it clears (state, `audio1`, `mac_out1`, `mac_out2`, `audio_out`). |
+| `clk`         | 1  | System clock. |
+| `audio_out`   | 16 | Signed equalized output, saturated. |
+
+## Simulation and synthesis
+
+**TODO:** add testbench instructions, a waveform or frequency-response plot compared against a Python/MATLAB reference, and FPGA utilization numbers once available.
