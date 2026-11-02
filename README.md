@@ -1,105 +1,117 @@
-# 3-Band Digital Audio Equalizer (Verilog HDL)
+# 3-Band Digital Audio Equalizer
 
-> **Status: work in progress.** Under active development.
+Verilog implementation of a three-band digital audio equalizer using the
+project's original shared-MAC FSM algorithm. The filter processes signed
+16-bit audio through cascaded **bass**, **mids**, and **treble** sections.
 
-A Verilog HDL implementation of a 3-band digital audio equalizer. It processes a 16-bit audio stream across three frequency bands (**Bass**, **Mids**, **Treble**) using IIR filters. An FSM sequences the three filter stages through a single shared **Multiply-Accumulate (MAC)** core to keep FPGA resource usage low.
+## Project status
 
-## Status
-
-- [x] FSM-based architecture with shared MAC core
-- [x] Output saturation to signed 16-bit range
-- [ ] Testbench and simulation results
-- [ ] Coefficient derivation and documentation
-- [ ] Synthesis results (LUTs, DSPs, Fmax)
-- [ ] FPGA hardware demo
+- Original FSM and MAC-based filter algorithm retained
+- Bass, mids, and treble coefficients added
+- Four-bit gain controls and signed 16-bit saturation included
+- Simulation testbench included
+- Synthesis results and FPGA hardware validation not yet included
 
 ## Architecture
 
-### FSM workflow
+Each input sample passes through these states:
+
+| State | Function |
+|---|---|
+| `ST_input` | Captures and sign-extends `audio_in` |
+| `ST_bass` | Applies the bass section |
+| `ST_mids` | Applies the mids section |
+| `ST_treble` | Applies the treble section |
+| `ST_output` | Clips the result to signed 16-bit range |
+
+The shared MAC evaluates:
 
 ```text
-        +--------------------------------------+
-        |              ST_INPUT                |
-        |  Sample audio_in, sign-extend to 32b |
-        +------------------+-------------------+
-                           |
-                           v
-        +--------------------------------------+
-        |              ST_BASS                 |
-        |  Load bass coefficients, run MAC     |
-        +------------------+-------------------+
-                           |
-                           v
-        +--------------------------------------+
-        |              ST_MIDS                 |
-        |  Load mids coefficients, run MAC     |
-        +------------------+-------------------+
-                           |
-                           v
-        +--------------------------------------+
-        |              ST_TREBLE               |
-        |  Load treble coefficients, run MAC   |
-        +------------------+-------------------+
-                           |
-                           v
-        +--------------------------------------+
-        |              ST_OUTPUT               |
-        |  Saturate and update audio_out       |
-        +--------------------------------------+
+mac_out = b1*audio + b2*audio1 - a1*mac_out1 - a2*mac_out2
 ```
 
-| State | Value | Description |
-|-------|-------|-------------|
-| `ST_INPUT`  | 0 | Samples 16-bit `audio_in` and sign-extends it to 32 bits. |
-| `ST_BASS`   | 1 | Loads bass coefficients (b1, b2, a1, a2) and updates feedback registers. |
-| `ST_MIDS`   | 2 | Loads mids coefficients and computes the intermediate output. |
-| `ST_TREBLE` | 3 | Loads treble coefficients and completes the cascaded processing. |
-| `ST_OUTPUT` | 4 | Checks upper and lower bounds, clips if needed, and updates the output. |
+The result is scaled by an arithmetic right shift of 10 bits. A complete
+sample requires five clock cycles, so the clock should be at least five times
+the audio sample rate.
 
-One sample takes at least 5 clock cycles, so the clock must run at least 5x the audio sample rate. **TODO:** state the target sample rate and clock frequency.
+## Coefficients
 
-### Shared MAC core
-
-The MAC evaluates the IIR difference equation combinationally:
+The coefficients in `Digital_equalizer.v` use signed Q2.10 scaling, where a
+real coefficient is represented as:
 
 ```text
-mac_out = (b1 * audio) + (b2 * audio1) - (a1 * mac_out1) - (a2 * mac_out2)
+fixed_coefficient = real_coefficient * 2^10
 ```
 
-where `audio1` is the previous input sample and `mac_out1`, `mac_out2` are the previous two outputs. The same MAC is reused for all three bands; only the coefficient set changes per state.
+The current coefficient sets are:
 
-### Saturation
+| Band | `b1` / `a1` | `b2` / `a2` | Design point |
+|---|---:|---:|---|
+| Bass | `-2031` | `1007` | 100 Hz, 48 kHz sample rate |
+| Mids | `-1877` | `870` | 1 kHz, 48 kHz sample rate |
+| Treble | `-664` | `305` | 8 kHz, 48 kHz sample rate |
 
-To avoid wraparound distortion on large boosts, the result is clamped to the signed 16-bit range, `-32768` to `+32767`, before being written to `audio_out`.
+The coefficients are declared as Verilog parameters, so they can be replaced
+without changing the FSM or MAC datapath.
 
-### Fixed-point format
+## Gain controls
 
-**TODO:** document the coefficient format (e.g. Q1.15), the accumulator width, and how the 32-bit result is scaled back to 16 bits.
+| Input | Width | Function |
+|---|---:|---|
+| `BassLevel` | 4 bits | Bass gain control |
+| `MidsLevel` | 4 bits | Mids gain control |
+| `TrebleLevel` | 4 bits | Treble gain control |
+
+The original gain-selection case statement maps the supported signed gain
+codes to `k_coefficient` values of `0.5`, `0.75`, `1.0`, `1.25`, and `1.5`.
+Unsupported values use the unity setting.
 
 ## Interface
 
 ```verilog
 module Digital_equalizer(
-    input  [15:0] audio_in,     // signed 16-bit audio sample
-    input  [3:0]  BassLevel,    // 4-bit bass gain control
-    input  [3:0]  MidsLevel,    // 4-bit mids gain control
-    input  [3:0]  TrebleLevel,  // 4-bit treble gain control
+    input  [15:0] audio_in,
+    input  [3:0]  BassLevel,
+    input  [3:0]  MidsLevel,
+    input  [3:0]  TrebleLevel,
     input         reset,
     input         clk,
-    output reg [15:0] audio_out // signed 16-bit equalized output
+    output reg [15:0] audio_out
 );
 ```
 
-| Port | Width | Description |
-|------|-------|-------------|
-| `audio_in`    | 16 | Signed input sample. |
-| `BassLevel`   | 4  | Bass gain setting. **TODO:** describe how it maps to coefficients. |
-| `MidsLevel`   | 4  | Mids gain setting. **TODO:** same. |
-| `TrebleLevel` | 4  | Treble gain setting. **TODO:** same. |
-| `reset`       | 1  | **TODO:** state polarity (sync/async) and what it clears (state, `audio1`, `mac_out1`, `mac_out2`, `audio_out`). |
-| `clk`         | 1  | System clock. |
-| `audio_out`   | 16 | Signed equalized output, saturated. |
+`audio_in` and `audio_out` are signed 16-bit audio samples represented by
+16-bit vectors. `reset` is sampled synchronously on the rising edge of
+`clk`. The design clips positive results to `32767` and negative results to
+`-32768` before storing the output.
 
-## Simulation and synthesis
+## Simulation
 
-**TODO:** add testbench instructions, a waveform or frequency-response plot compared against a Python/MATLAB reference, and FPGA utilization numbers once available.
+The testbench is `tb_Digital_equalizer.v`. Compile it with Icarus Verilog:
+
+```sh
+iverilog -g2012 -Wall -o /tmp/equalizer_tb \
+    Digital_equalizer.v tb_Digital_equalizer.v
+vvp /tmp/equalizer_tb
+```
+
+The testbench applies zero, positive, negative, and high-amplitude samples,
+then changes all three gain controls. It checks that the internal
+`filter_out` value does not contain unknown bits.
+
+## Known limitation
+
+The current original RTL contains combinational assignments in the FSM
+datapath, including the `ST_treble` path where `audio` is assigned from
+`mac_out` while `mac_out` also depends on `audio`. Some simulators may report
+unknown values or fail to settle because of this zero-delay combinational
+feedback. This README documents the behavior; the original filter algorithm
+has intentionally not been redesigned.
+
+## Files
+
+| File | Description |
+|---|---|
+| `Digital_equalizer.v` | Equalizer RTL |
+| `tb_Digital_equalizer.v` | Simulation testbench |
+| `README.md` | Project documentation |
